@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Code & Cause — Car Error Lookup</title>
+<style>
+  :root{
+    --ink:#1c2321;
+    --paper:#eef0ea;
+    --steel:#3c4a52;
+    --signal:#c8552c;
+    --line:#c7cabf;
+    --mono: 'Courier New', Courier, monospace;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family: Georgia, 'Times New Roman', serif;
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:32px 16px;
+  }
+  .panel{
+    width:100%;
+    max-width:560px;
+    border:1px solid var(--line);
+    background:#fff;
+  }
+  .panel-head{
+    padding:24px 28px 18px;
+    border-bottom:1px solid var(--line);
+  }
+  .panel-head .tag{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    color:var(--steel);
+  }
+  .panel-head h1{
+    margin:6px 0 4px;
+    font-size:26px;
+    font-weight:400;
+  }
+  .panel-head p{
+    margin:0;
+    font-size:13px;
+    color:var(--steel);
+    font-family: Arial, sans-serif;
+  }
+  form{
+    padding:24px 28px;
+  }
+  .field{
+    margin-bottom:18px;
+  }
+  label{
+    display:block;
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--steel);
+    margin-bottom:6px;
+  }
+  input[type=text]{
+    width:100%;
+    padding:11px 12px;
+    font-size:15px;
+    border:1px solid var(--line);
+    background:var(--paper);
+    color:var(--ink);
+    font-family: Arial, sans-serif;
+  }
+  input[type=text]:focus{
+    outline:2px solid var(--signal);
+    outline-offset:-1px;
+    background:#fff;
+  }
+  .row{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:12px;
+  }
+  button{
+    width:100%;
+    padding:13px;
+    margin-top:6px;
+    background:var(--ink);
+    color:#fff;
+    border:none;
+    font-family:var(--mono);
+    font-size:13px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    cursor:pointer;
+  }
+  button:hover{ background:var(--signal); }
+  button:disabled{ background:#999; cursor:default; }
+  .keybox{
+    padding:14px 28px 0;
+  }
+  .keybox summary{
+    font-family:var(--mono);
+    font-size:11px;
+    color:var(--steel);
+    cursor:pointer;
+    letter-spacing:.05em;
+  }
+  .keybox input{ margin-top:10px; }
+  #result{
+    margin:0 28px 28px;
+    padding:16px;
+    border-left:3px solid var(--signal);
+    background:var(--paper);
+    font-family: Arial, sans-serif;
+    font-size:14px;
+    line-height:1.55;
+    white-space:pre-wrap;
+    display:none;
+  }
+  #result.show{ display:block; }
+  #result.loading{ color:var(--steel); font-family:var(--mono); font-size:12px; }
+</style>
+</head>
+<body>
+
+<div class="panel">
+  <div class="panel-head">
+    <div class="tag">Diagnostic Lookup</div>
+    <h1>What's that code mean?</h1>
+    <p>Enter the code your car threw, and the make/model — get a plain-English read on what it is and where to look, backed by a live web search.</p>
+  </div>
+
+  <form id="lookupForm">
+    <div class="field">
+      <label for="errorCode">Error code</label>
+      <input type="text" id="errorCode" placeholder="e.g. P0420" required>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="make">Make</label>
+        <input type="text" id="make" list="makeList" placeholder="Toyota" required>
+        <datalist id="makeList">
+          <option value="Toyota"><option value="Honda"><option value="Ford">
+          <option value="Chevrolet"><option value="Nissan"><option value="BMW">
+          <option value="Mercedes-Benz"><option value="Volkswagen"><option value="Hyundai">
+          <option value="Kia"><option value="Mazda"><option value="Subaru">
+          <option value="Audi"><option value="Lexus"><option value="Jeep">
+        </datalist>
+      </div>
+
+      <div class="field">
+        <label for="model">Model</label>
+        <input type="text" id="model" list="modelList" placeholder="Camry" required>
+        <datalist id="modelList"></datalist>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="year">Year</label>
+      <input type="text" id="year" list="yearList" placeholder="2018" inputmode="numeric" maxlength="4">
+      <datalist id="yearList"></datalist>
+    </div>
+
+    <button type="submit" id="submitBtn">Look it up</button>
+  </form>
+
+  <div id="result"></div>
+</div>
+
+<script>
+// Replace this with your deployed Cloudflare Worker URL
+const WORKER_URL = "https://your-worker-name.yoursubdomain.workers.dev";
+
+// A small make -> model map to power the second dropdown.
+// Typing a custom value always works regardless of this list.
+const modelsByMake = {
+  Toyota: ["Camry","Corolla","RAV4","Highlander","Tacoma","Prius","Yaris"],
+  Honda: ["Civic","Accord","CR-V","Pilot","Fit","HR-V"],
+  Ford: ["F-150","Focus","Escape","Explorer","Mustang","Fusion"],
+  Chevrolet: ["Silverado","Malibu","Equinox","Cruze","Tahoe"],
+  Nissan: ["Altima","Sentra","Rogue","Maxima","Pathfinder","Patrol"],
+  BMW: ["3 Series","5 Series","X3","X5","1 Series"],
+  "Mercedes-Benz": ["C-Class","E-Class","GLC","A-Class"],
+  Volkswagen: ["Golf","Jetta","Passat","Tiguan"],
+  Hyundai: ["Elantra","Sonata","Tucson","Santa Fe"],
+  Kia: ["Optima","Sportage","Sorento","Forte"],
+  Mazda: ["Mazda3","Mazda6","CX-5","CX-30"],
+  Subaru: ["Outback","Forester","Impreza","Crosstrek"],
+  Audi: ["A3","A4","Q5","Q7"],
+  Lexus: ["ES","RX","IS","NX"],
+  Jeep: ["Wrangler","Grand Cherokee","Cherokee","Compass"]
+};
+
+const makeInput = document.getElementById('make');
+const modelInput = document.getElementById('model');
+const modelList = document.getElementById('modelList');
+const yearList = document.getElementById('yearList');
+
+// Populate year suggestions, current year down to 1980
+const currentYear = new Date().getFullYear();
+let yearOptions = '';
+for (let y = currentYear + 1; y >= 1980; y--) {
+  yearOptions += `<option value="${y}">`;
+}
+yearList.innerHTML = yearOptions;
+
+makeInput.addEventListener('input', () => {
+  const models = modelsByMake[makeInput.value] || [];
+  modelList.innerHTML = models.map(m => `<option value="${m}">`).join('');
+});
+
+const form = document.getElementById('lookupForm');
+const resultBox = document.getElementById('result');
+const submitBtn = document.getElementById('submitBtn');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const errorCode = document.getElementById('errorCode').value.trim();
+  const make = makeInput.value.trim();
+  const model = modelInput.value.trim();
+  const year = document.getElementById('year').value.trim();
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Looking it up...';
+  resultBox.className = 'show loading';
+  resultBox.textContent = 'Searching the web...';
+
+  const searchQuery = `What does error code ${errorCode} mean on a ${year} ${make} ${model}, where is the affected part located, what causes it, and is it safe to keep driving?`;
+
+  try {
+    const res = await fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: searchQuery })
+    });
+
+    const data = await res.json();
+
+    if (data.error) {
+      throw new Error(data.error || data.detail || 'Tavily API error');
+    }
+
+    let output = data.answer ? data.answer.trim() : '';
+
+    if (data.results && data.results.length) {
+      output += '\n\nSources:\n' + data.results
+        .map((r, i) => `${i + 1}. ${r.title || r.url} — ${r.url}`)
+        .join('\n');
+    }
+
+    if (!output) {
+      output = 'No answer came back — try rephrasing the error code or double-check the car details.';
+    }
+
+    resultBox.className = 'show';
+    resultBox.textContent = output;
+
+  } catch (err) {
+    resultBox.className = 'show';
+    resultBox.textContent = 'Error: ' + err.message;
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Look it up';
+  }
+});
+</script>
+
+</body>
+</html>
